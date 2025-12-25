@@ -34,6 +34,9 @@ export default function Home() {
     try {
       // Robust URL handling
       let apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      // Remove trailing slash to prevent double slash (//) errors
+      apiUrl = apiUrl.replace(/\/$/, "");
+
       if (!apiUrl.startsWith('http')) {
         apiUrl = `https://${apiUrl}`;
       }
