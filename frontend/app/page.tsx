@@ -32,9 +32,13 @@ export default function Home() {
     setResult(null);
 
     try {
-      // Use environment variable for Vercel, fallback to localhost for dev
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-      const resp = await axios.post(`${API_URL}/analyze`, {
+      // Robust URL handling
+      let apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      if (!apiUrl.startsWith('http')) {
+        apiUrl = `https://${apiUrl}`;
+      }
+
+      const resp = await axios.post(`${apiUrl}/analyze`, {
         app_name: appName,
         dates: dates
       });
