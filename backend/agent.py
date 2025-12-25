@@ -2,23 +2,20 @@ import json
 import os
 import shutil
 from dotenv import load_dotenv
-
-load_dotenv()
 import numpy as np
 from datetime import datetime
 from typing import List, Dict, Any, Tuple
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
 from langchain_huggingface import HuggingFaceEmbeddings
 from sklearn.metrics.pairwise import cosine_similarity
-import pandas as pd
+
+load_dotenv()
 
 # Constants
 TAXONOMY_FILE = "taxonomy.json"
-DATA_DIR = "data"
-OUTPUT_DIR = "output"
-SIMILARITY_THRESHOLD = 0.82
+SIMILARITY_THRESHOLD = 0.78 # As per spec
 
 # --- 1. TAXONOMY & EMBEDDING MANAGER ---
 class TaxonomyManager:
@@ -51,7 +48,7 @@ class TaxonomyManager:
                 "created_at": details["created_at"]
             }
         
-        # Backup before write
+        # Backup
         if os.path.exists(self.taxonomy_path):
             shutil.copy(self.taxonomy_path, self.taxonomy_path + ".bak")
             
@@ -82,7 +79,7 @@ class TaxonomyManager:
         best_score = similarities[best_idx]
         best_topic = existing_topics[best_idx]
         
-        print(f"[DEBUG] '{raw_topic}' vs '{best_topic}' score: {best_score:.3f}")
+        # print(f"[DEBUG] '{raw_topic}' vs '{best_topic}' score: {best_score:.3f}")
         
         if best_score >= SIMILARITY_THRESHOLD:
             return best_topic
@@ -97,70 +94,82 @@ class TaxonomyManager:
                 "embedding": emb,
                 "created_at": datetime.now().isoformat()
             }
-            pass # We only save periodically or at end of batch to avoid too much IO
 
-# --- 2. REVIEW EXTRACTION AGENT (GROQ) ---
-class ReviewAgent:
-    def __init__(self, groq_api_key: str):
+# --- 2. AGENT (GROQ) ---
+class Agent:
+    def __init__(self):
+        key = os.environ.get("GROQ_API_KEY")
+        if not key:
+            raise ValueError("GROQ_API_KEY not found in env")
+            
         self.llm = ChatGroq(
             temperature=0,
-            model_name="llama-3.3-70b-versatile",
-            groq_api_key=groq_api_key
+            model_name="llama-3.1-70b-versatile",
+            groq_api_key=key
         )
         self.parser = JsonOutputParser()
+        self.str_parser = StrOutputParser()
         
-        # Prompt for extraction
+        # Extraction Prompt
         self.extract_prompt = ChatPromptTemplate.from_template("""
-        You are an expert user researcher. Your task is to analyze a batch of App Store reviews and exact specific issues, requests, or feedback points.
-        
-        For each review, if it contains a clear issue, bug report, feature request, or specific praise/complaint, extract it as a short, concise topic string (3-6 words).
-        Ignore generic reviews like "Good", "Nice", "Worst app" unless they specify WHY.
+        You are an AI that extracts user complaints and feature requests from reviews.
+        Return ONLY a JSON list of normalized topics (strings).
         
         Reviews:
         {reviews_text}
         
-        Return the output as a JSON List of objects:
-        [
-            {{ "reviewId": "...", "topic": "..." }},
-            ...
-        ]
-        If a review has no specific content, do not include it in the list.
+        Output format: ["Topic 1", "Topic 2"]
         """)
         
-        self.chain = self.extract_prompt | self.llm | self.parser
+        # Insight Prompt
+        self.insight_prompt = ChatPromptTemplate.from_template("""
+        You are a product analytics AI.
+        
+        Context:
+        - Trend Data: {trend_str}
+        - New Emerging Topics: {new_topics}
+        - Spiking Topics (>2x growth): {spikes}
+        
+        Write 3–5 bullet-points summarizing trend changes, new/emerging topics, and spike events.
+        Keep it concise and professional.
+        """)
+        
+        self.extract_chain = self.extract_prompt | self.llm | self.parser
+        self.insight_chain = self.insight_prompt | self.llm | self.str_parser
 
-    def extract_topics_batch(self, reviews_batch: List[Dict]) -> List[Dict]:
-        """
-        Takes a list of raw review dicts and returns topic extractions.
-        """
-        # Format reviews for prompt
-        reviews_text = ""
-        for r in reviews_batch:
-            # Filter extremely short reviews to save tokens and noise
-            if len(r['content']) < 4: 
-                continue
-            reviews_text += f"ID: {r['reviewId']}\nText: {r['content']}\n---\n"
-            
-        if not reviews_text:
-            return []
-
+    def extract_topics(self, reviews_text: str) -> List[str]:
         try:
-            result = self.chain.invoke({"reviews_text": reviews_text})
-            return result
+            return self.extract_chain.invoke({"reviews_text": reviews_text})
         except Exception as e:
-            print(f"[ERROR] LLM Extraction failed: {e}")
+            print(f"[ERROR] Extraction failed: {e}")
             return []
+            
+    def generate_insights(self, trend_dict, new_topics, spikes) -> str:
+        try:
+            trend_view = ""
+            for topic, counts in list(trend_dict.items())[:5]: # Top 5 only to save tokens
+                trend_view += f"{topic}: {counts}\n"
+                
+            return self.insight_chain.invoke({
+                "trend_str": trend_view,
+                "new_topics": ", ".join(new_topics),
+                "spikes": ", ".join(spikes)
+            })
+        except Exception as e:
+            print(f"[ERROR] Insight generation failed: {e}")
+            return "Could not generate insights."
+
+# --- Singleton Instances ---
+# These will be imported by main.py
+taxonomy_mgr = TaxonomyManager()
+agent = Agent()
 
 # --- 3. PIPELINE ORCHESTRATOR ---
-def process_daily_batch(date_str: str, taxonomy_mgr: TaxonomyManager, agent: ReviewAgent):
-    file_path = os.path.join(DATA_DIR, f"{date_str}.json")
-    if not os.path.exists(file_path):
-        print(f"[SKIP] No data for {date_str}")
-        return
-    
-    with open(file_path, "r", encoding="utf-8") as f:
-        reviews = json.load(f)
-    
+def process_daily_batch(date_str: str, reviews: List[Dict]) -> Dict[str, int]:
+    """
+    Processes a batch of reviews for a given date, extracts topics,
+    maps them to the taxonomy, and returns daily topic counts.
+    """
     print(f"[PROCESSING] {len(reviews)} reviews for {date_str}")
     
     daily_topics = {} # {topic: count}
@@ -170,12 +179,22 @@ def process_daily_batch(date_str: str, taxonomy_mgr: TaxonomyManager, agent: Rev
     for i in range(0, len(reviews), CHUNK_SIZE):
         batch = reviews[i:i+CHUNK_SIZE]
         
+        # Format reviews for prompt
+        reviews_text = ""
+        for r in batch:
+            # Filter extremely short reviews to save tokens and noise
+            if len(r['content']) < 4: 
+                continue
+            reviews_text += f"ID: {r['reviewId']}\nText: {r['content']}\n---\n"
+            
+        if not reviews_text:
+            continue
+
         # 1. Extract
-        extracted_items = agent.extract_topics_batch(batch)
+        extracted_topics = agent.extract_topics(reviews_text)
         
         # 2. Map & Count
-        for item in extracted_items:
-            raw_topic = item.get("topic")
+        for raw_topic in extracted_topics:
             if not raw_topic: continue
             
             # Map valid topics
@@ -191,30 +210,16 @@ def process_daily_batch(date_str: str, taxonomy_mgr: TaxonomyManager, agent: Rev
             
         print(f"   Processed batch {i//CHUNK_SIZE + 1}/{(len(reviews)//CHUNK_SIZE)+1}")
 
-    # Save daily stats
-    if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
-        
-    stats_file = os.path.join(OUTPUT_DIR, f"stats_{date_str}.json")
-    with open(stats_file, "w") as f:
-        json.dump(daily_topics, f, indent=2)
-        
     # Persist taxonomy updates
     taxonomy_mgr.save_taxonomy()
-    print(f"[DONE] Daily stats saved to {stats_file}")
+    print(f"[DONE] Processed reviews for {date_str}")
+    return daily_topics
 
-if __name__ == "__main__":
-    # Test run
-    # Expects GROQ_API_KEY env var
-    key = os.environ.get("GROQ_API_KEY")
-    if not key:
-        print("Please set GROQ_API_KEY environment variable.")
-        exit(1)
-        
-    print("Initializing Agent...")
-    tax_mgr = TaxonomyManager()
-    agent = ReviewAgent(key)
-    
-    # Run for the date we scraped
-    test_date = "2025-12-24" 
-    process_daily_batch(test_date, tax_mgr, agent)
+def generate_insights_for_period(trend_data: Dict[str, Any], new_topics: List[str], spikes: List[str]) -> str:
+    """
+    Generates a summary of insights based on trend data, new topics, and spiking topics.
+    """
+    print("[INSIGHTS] Generating insights...")
+    insights = agent.generate_insights(trend_data, new_topics, spikes)
+    print("[INSIGHTS] Insights generated.")
+    return insights

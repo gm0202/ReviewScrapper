@@ -1,9 +1,11 @@
+fastapi
+uvicorn
+groq
 google-play-scraper
-langchain
-langchain-groq
-langchain-huggingface
 sentence-transformers
 scikit-learn
 pandas
 python-dotenv
-tabulate
+langchain
+langchain-groq
+langchain-huggingface
