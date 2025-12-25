@@ -32,8 +32,9 @@ export default function Home() {
     setResult(null);
 
     try {
-      // Use localhost:8000 directly for now (ensure CORS is enabled in backend)
-      const resp = await axios.post('http://127.0.0.1:8000/analyze', {
+      // Use environment variable for Vercel, fallback to localhost for dev
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const resp = await axios.post(`${API_URL}/analyze`, {
         app_name: appName,
         dates: dates
       });
