@@ -10,16 +10,46 @@ def search_app_id(app_name: str) -> str:
     """
     Searches for the app by name and returns the top result's appId.
     """
+    COMMON_APPS = {
+        "instagram": "com.instagram.android",
+        "insta": "com.instagram.android",
+        "swiggy": "https://play.google.com/store/apps/details?id=in.swiggy.android&pcampaignid=web_share",
+        "zomato": "https://play.google.com/store/apps/details?id=com.application.zomato&pcampaignid=web_share",
+        "uber": "https://play.google.com/store/apps/details?id=com.ubercab&pcampaignid=web_share",
+        "blinkit": "https://play.google.com/store/apps/details?id=com.grofers.customerapp&pcampaignid=web_share", 
+        "zepto": "https://play.google.com/store/apps/details?id=com.zeptonow.customer&pcampaignid=web_share",
+        "whatsapp": "https://play.google.com/store/apps/details?id=com.whatsapp&pcampaignid=web_share",
+        "snapchat": "https://play.google.com/store/apps/details?id=com.snapchat.android&pcampaignid=web_share",
+        "facebook": "https://play.google.com/store/apps/details?id=com.facebook.katana&pcampaignid=web_share",
+        "twitter": "https://play.google.com/store/apps/details?id=com.twitter.android&pcampaignid=web_share",
+        "x": "https://play.google.com/store/apps/details?id=com.twitter.android&pcampaignid=web_share",
+        "linkedin": "https://play.google.com/store/apps/details?id=com.linkedin.android&pcampaignid=web_share",
+        "youtube": "https://play.google.com/store/apps/details?id=com.google.android.youtube&pcampaignid=web_share",
+        "netflix": "https://play.google.com/store/apps/details?id=com.netflix.mediaclient&pcampaignid=web_share",
+        "spotify": "https://play.google.com/store/apps/details?id=com.spotify.music&pcampaignid=web_share"
+    }
+    
+    name_clean = app_name.lower().strip()
+    
+    # 1. Instant match = fastest + safest (bypasses network/throttling)
+    if name_clean in COMMON_APPS:
+        print(f"[SEARCH] Using hardcoded ID for '{app_name}': {COMMON_APPS[name_clean]}")
+        return COMMON_APPS[name_clean]
+        
     try:
+        print(f"[SEARCH] Looking for app: '{app_name}' (Global)...")
+        # 2. Global Search (No country restriction, higher n_hits)
         results = search(
             app_name,
-            lang="en",
-            country="in",
-            n_hits=1
+            n_hits=5
         )
         if results:
+            print(f"[SEARCH] Found: {results[0]['appId']}")
             return results[0]['appId']
+            
+        print("[SEARCH] No results found globally.")
         return None
+        
     except Exception as e:
         print(f"[ERROR] App search failed: {e}")
         return None

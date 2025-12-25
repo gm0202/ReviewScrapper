@@ -13,7 +13,7 @@ export default function TrendChart({ data, topics }: TrendChartProps) {
     // data format: [{ date: '2025-01-01', 'Topic A': 10, 'Topic B': 5 }, ...]
 
     return (
-        <div className="h-[300px] w-full bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+        <div className="h-[300px] w-full min-w-0 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
             <h3 className="text-sm font-semibold text-slate-500 mb-4 uppercase tracking-wider">Topic Volume Trend</h3>
             <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={data}>

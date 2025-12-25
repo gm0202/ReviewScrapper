@@ -18,7 +18,10 @@ interface AnalysisResult {
 
 export default function Home() {
   const [appName, setAppName] = useState('Instagram');
-  const [dates, setDates] = useState(['2025-01-01', '2025-01-02']); // Standard default
+  const [dates, setDates] = useState(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return [today, today];
+  });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState('');

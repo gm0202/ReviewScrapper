@@ -98,17 +98,17 @@ class TaxonomyManager:
 # --- 2. AGENT (GROQ) ---
 class Agent:
     def __init__(self):
-        key = os.environ.get("GROQ_API_KEY")
-        if not key:
+        self.key = os.environ.get("GROQ_API_KEY")
+        if not self.key:
             raise ValueError("GROQ_API_KEY not found in env")
             
-        self.llm = ChatGroq(
-            temperature=0,
-            model_name="llama-3.1-70b-versatile",
-            groq_api_key=key
-        )
-        self.parser = JsonOutputParser()
-        self.str_parser = StrOutputParser()
+        # Prioritized list of models to try
+        self.models = [
+            "llama-3.3-70b-versatile",  # Best quality
+            "llama-3.1-8b-instant",     # Fast fallback
+            "mixtral-8x7b-32768",       # Good alternative
+            "gemma2-9b-it"              # Backup
+        ]
         
         # Extraction Prompt
         self.extract_prompt = ChatPromptTemplate.from_template("""
@@ -134,30 +134,77 @@ class Agent:
         Keep it concise and professional.
         """)
         
-        self.extract_chain = self.extract_prompt | self.llm | self.parser
-        self.insight_chain = self.insight_prompt | self.llm | self.str_parser
+    def _get_chain(self, model_name: str, prompt, output_parser):
+        """Creates a chain with the specified model."""
+        llm = ChatGroq(
+            temperature=0,
+            model_name=model_name,
+            groq_api_key=self.key
+        )
+        return prompt | llm | output_parser
+
+    def _invoke_with_fallback(self, prompt, output_parser, input_data: Dict[str, Any]):
+        """Tries to run the chain with fallback models if rate limit is hit."""
+        errors = []
+        
+        for model in self.models:
+            try:
+                # print(f"[AGENT] Trying model: {model}")
+                chain = self._get_chain(model, prompt, output_parser)
+                return chain.invoke(input_data)
+            except Exception as e:
+                err_str = str(e).lower()
+                # Check for rate limit (429) or overload errors
+                if "429" in err_str or "rate limit" in err_str:
+                    print(f"[WARN] Rate limit hit for {model}. Switching to backup...")
+                    errors.append(f"{model}: Rate Limit")
+                    continue
+                else:
+                    # If it's a different error (e.g. parsing), try next model just in case,
+                    # but it might be prompt related.
+                    print(f"[WARN] Error with {model}: {e}")
+                    errors.append(f"{model}: {e}")
+                    continue
+                    
+        raise Exception(f"All models failed: {errors}")
 
     def extract_topics(self, reviews_text: str) -> List[str]:
         try:
-            return self.extract_chain.invoke({"reviews_text": reviews_text})
+            return self._invoke_with_fallback(
+                self.extract_prompt, 
+                self.parser,  # Wait, parser wasn't re-initialized. It's stateless so it's fine.
+                {"reviews_text": reviews_text}
+            )
         except Exception as e:
-            print(f"[ERROR] Extraction failed: {e}")
+            print(f"[ERROR] Extraction failed after retries: {e}")
             return []
             
     def generate_insights(self, trend_dict, new_topics, spikes) -> str:
         try:
             trend_view = ""
-            for topic, counts in list(trend_dict.items())[:5]: # Top 5 only to save tokens
+            for topic, counts in list(trend_dict.items())[:5]: 
                 trend_view += f"{topic}: {counts}\n"
                 
-            return self.insight_chain.invoke({
-                "trend_str": trend_view,
-                "new_topics": ", ".join(new_topics),
-                "spikes": ", ".join(spikes)
-            })
+            return self._invoke_with_fallback(
+                self.insight_prompt,
+                self.str_parser,
+                {
+                    "trend_str": trend_view,
+                    "new_topics": ", ".join(new_topics),
+                    "spikes": ", ".join(spikes)
+                }
+            )
         except Exception as e:
             print(f"[ERROR] Insight generation failed: {e}")
-            return "Could not generate insights."
+            return "Could not generate insights (AI Busy)."
+
+    @property
+    def parser(self):
+        return JsonOutputParser()
+        
+    @property
+    def str_parser(self):
+        return StrOutputParser()
 
 # --- Singleton Instances ---
 # These will be imported by main.py
