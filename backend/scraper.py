@@ -13,20 +13,20 @@ def search_app_id(app_name: str) -> str:
     COMMON_APPS = {
         "instagram": "com.instagram.android",
         "insta": "com.instagram.android",
-        "swiggy": "https://play.google.com/store/apps/details?id=in.swiggy.android&pcampaignid=web_share",
-        "zomato": "https://play.google.com/store/apps/details?id=com.application.zomato&pcampaignid=web_share",
-        "uber": "https://play.google.com/store/apps/details?id=com.ubercab&pcampaignid=web_share",
-        "blinkit": "https://play.google.com/store/apps/details?id=com.grofers.customerapp&pcampaignid=web_share", 
-        "zepto": "https://play.google.com/store/apps/details?id=com.zeptonow.customer&pcampaignid=web_share",
-        "whatsapp": "https://play.google.com/store/apps/details?id=com.whatsapp&pcampaignid=web_share",
-        "snapchat": "https://play.google.com/store/apps/details?id=com.snapchat.android&pcampaignid=web_share",
-        "facebook": "https://play.google.com/store/apps/details?id=com.facebook.katana&pcampaignid=web_share",
-        "twitter": "https://play.google.com/store/apps/details?id=com.twitter.android&pcampaignid=web_share",
-        "x": "https://play.google.com/store/apps/details?id=com.twitter.android&pcampaignid=web_share",
-        "linkedin": "https://play.google.com/store/apps/details?id=com.linkedin.android&pcampaignid=web_share",
-        "youtube": "https://play.google.com/store/apps/details?id=com.google.android.youtube&pcampaignid=web_share",
-        "netflix": "https://play.google.com/store/apps/details?id=com.netflix.mediaclient&pcampaignid=web_share",
-        "spotify": "https://play.google.com/store/apps/details?id=com.spotify.music&pcampaignid=web_share"
+        "swiggy": "in.swiggy.android",
+        "zomato": "com.application.zomato",
+        "uber": "com.ubercab",
+        "blinkit": "com.grofers.customerapp", 
+        "zepto": "com.zeptonow.customer",
+        "whatsapp": "com.whatsapp",
+        "snapchat": "com.snapchat.android",
+        "facebook": "com.facebook.katana",
+        "twitter": "com.twitter.android",
+        "x": "com.twitter.android",
+        "linkedin": "com.linkedin.android",
+        "youtube": "com.google.android.youtube",
+        "netflix": "com.netflix.mediaclient",
+        "spotify": "com.spotify.music"
     }
     
     name_clean = app_name.lower().strip()
@@ -44,10 +44,13 @@ def search_app_id(app_name: str) -> str:
             n_hits=5
         )
         if results:
-            print(f"[SEARCH] Found: {results[0]['appId']}")
-            return results[0]['appId']
+            # Iterate to find the first valid appId (sometimes top result is None)
+            for res in results:
+                if res['appId']:
+                    print(f"[SEARCH] Found: {res['appId']}")
+                    return res['appId']
             
-        print("[SEARCH] No results found globally.")
+        print("[SEARCH] No valid results found globally.")
         return None
         
     except Exception as e:
