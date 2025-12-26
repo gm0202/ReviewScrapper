@@ -51,7 +51,7 @@ export default function Home() {
         return;
       }
 
-      const resp = await axios.post(`${apiUrl}analyze`, {
+      const resp = await axios.post(`${apiUrl}/analyze`, {
         app_name: appName,
         dates: dates
       });
