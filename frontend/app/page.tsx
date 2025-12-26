@@ -41,6 +41,16 @@ export default function Home() {
         apiUrl = `https://${apiUrl}`;
       }
 
+      const start = new Date(dates[0]);
+      const end = new Date(dates[1]);
+      const hoursDiff = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+
+      if (hoursDiff > 48) {
+        setError("As we are using a free tier of AI, it's not possible to analyse more than 48 hours.");
+        setLoading(false);
+        return;
+      }
+
       const resp = await axios.post(`${apiUrl}analyze`, {
         app_name: appName,
         dates: dates
